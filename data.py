@@ -1,7 +1,7 @@
 '''
 Date: 2023-09-27 22:33:50
 LastEditors: turtlepig
-LastEditTime: 2023-10-05 21:52:45
+LastEditTime: 2023-11-11 14:56:41
 Description:  Data tools
 '''
 import os
@@ -33,7 +33,9 @@ def create_dataloader(dataset, mode = 'train', batch_size = 1, batchify_fn = Non
     """
     """
     if trans_fn:
-        dataset = dataset.map(trans_fn)
+        # dataset = dataset.map(trans_fn)
+        dataset = trans_fn(dataset)
+    # trans_fn中调用convert_example函数返回tokenized序列[input_ids, token_type_ids]
     
     shuffle = True if mode == 'train' else False
     
@@ -42,7 +44,7 @@ def create_dataloader(dataset, mode = 'train', batch_size = 1, batchify_fn = Non
     else:
         sampler = SequentialSampler(dataset)
 
-    dataloader = DataLoader(dataset = dataset, batch_size = batch_size, sampler = sampler, batch_size = batch_size, collate_fn = batchify_fn, pin_memory = True)
+    dataloader = DataLoader(dataset = dataset, batch_size = batch_size, sampler = sampler, collate_fn = batchify_fn, pin_memory = True)
 
     return dataloader
 
@@ -69,10 +71,17 @@ def convert_example(example, tokenizer, max_seq_len = 512, pad_to_max_seq_len = 
     result = []
     for k, v in example.items():
 
-        encoded_inputs = tokenizer(text = v, max_length = max_seq_len, padding = pad_to_max_seq_len)
-        input_ids = encoded_inputs['input_ids']
-        token_type_ids =  encoded_inputs['token_type_ids']
-        result += [input_ids, token_type_ids]
+        # query
+        encoded_query_inputs = tokenizer(text = v['sentence'], max_length = max_seq_len, padding = pad_to_max_seq_len)
+        input_query_ids = encoded_query_inputs['input_ids']
+        query_token_type_ids =  encoded_query_inputs['token_type_ids']
+
+        # title(label)
+        encoded_label_inputs = tokenizer(text = v['label'], max_length = max_seq_len, padding = pad_to_max_seq_len)
+        label_query_ids = encoded_label_inputs['input_ids']
+        label_query_type_ids = encoded_label_inputs['token_type_ids']
+
+        result += [input_query_ids, query_token_type_ids, label_query_ids, label_query_type_ids]
 
     return result
 
@@ -140,10 +149,14 @@ def convert_label_example(example, tokenizer, max_seq_len = 512, pad_to_max_seq_
 def read_text_pair(data_path):
     """ Reads data"""
 
+    result = []
+
     with open(data_path, 'r', encoding = 'utf-8') as f:
         for line in f:
             data = line.rstrip().split('\t')
-            yield {'sentence': data[0], 'label': data[1].replace('##', ',')}
+            result.append({'sentence': data[0], 'label': data[1].replace('##', ',')})
+    
+    return result
             
 # ANN - active learning ------------------------------------------------------
 
