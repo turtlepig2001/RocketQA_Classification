@@ -1,7 +1,7 @@
 '''
 Date: 2023-09-23 22:52:19
 LastEditors: turtlepig
-LastEditTime: 2023-11-11 19:45:26
+LastEditTime: 2023-11-18 22:48:41
 Description:  RocketQA Classification
 '''
 
@@ -74,15 +74,28 @@ def get_train_dataloader(train_ds, tokenizer, batch_size = BATCH_SIZE):
             # label segment
             pad_sequence([torch.tensor(example[3]) for example in batch], batch_first = True, padding_value = tokenizer.pad_token_type_id)
         )
-
-    train_dataloader = create_dataloader(train_ds, mode = 'train', batch_size = BATCH_SIZE, batchify_fn = batchify_fn, trans_fn = trans_func)
+    
+    train_dataloader = create_dataloader(train_ds, mode = 'train', batch_size = batch_size, batchify_fn = batchify_fn, trans_fn = trans_func)
     return train_dataloader
 
-def get_label_dataloader(dev_ds, tokenizer, batch_size=BATCH_SIZE):
+def get_label_dataloader(tokenizer, batch_size = BATCH_SIZE):
     # 将标签进行索引化
     id2corpus = gen_id2corpus(path_config['corpus_file'])
-    corpus_list = [{idx: text} for idx, text in id2corpus.items()]
-    
+    corpus_list = [{'idx':idx,'text':text} for idx, text in id2corpus.items()]
+    batchify_fn = lambda batch: (
+            pad_sequence([torch.tensor(example['idx']) for example in batch]),
+            pad_sequence([torch.tensor(example['text']) for example in batch])
+        )
+
+    eval_fn = partial(convert_corpus_example, tokenizer = tokenizer, pad_to_max_seq_len = MAX_SEQ_LEN)
+
+    corpus_data_loader = create_dataloader(corpus_list, mode = 'predict', batch_size = batch_size, batchify_fn = batchify_fn, trans_fn = eval_fn)
+
+    return corpus_data_loader
+
+def get_dev_dataloader(tokenizer, batch_size = BATCH_SIZE):
+    '''
+    '''
 
 
 if __name__ == "__main__":
