@@ -1,7 +1,7 @@
 '''
 Date: 2023-09-23 22:52:19
 LastEditors: turtlepig
-LastEditTime: 2023-11-18 22:48:41
+LastEditTime: 2023-11-19 16:33:14
 Description:  RocketQA Classification
 '''
 
@@ -67,7 +67,7 @@ def get_train_dataloader(train_ds, tokenizer, batch_size = BATCH_SIZE):
             # query input
             pad_sequence([torch.tensor(example[0]) for example in batch], batch_first = True, padding_value = tokenizer.pad_token_id),
             # query segment
-            pad_sequence([torch.tensor(example[1]) for example in batch], batch_first = True, padding_value = tokenizer.pad_token_type_id),
+            pad_sequence([torch.tensor(example[1]) for example in batch], batch_first = True ,padding_value = tokenizer.pad_token_type_id),
 
             # label input
             pad_sequence([torch.tensor(example[2]) for example in batch], batch_first = True, padding_value = tokenizer.pad_token_id),
@@ -81,13 +81,13 @@ def get_train_dataloader(train_ds, tokenizer, batch_size = BATCH_SIZE):
 def get_label_dataloader(tokenizer, batch_size = BATCH_SIZE):
     # 将标签进行索引化
     id2corpus = gen_id2corpus(path_config['corpus_file'])
-    corpus_list = [{'idx':idx,'text':text} for idx, text in id2corpus.items()]
+    corpus_list = [{idx:text} for idx, text in id2corpus.items()]
     batchify_fn = lambda batch: (
-            pad_sequence([torch.tensor(example['idx']) for example in batch]),
-            pad_sequence([torch.tensor(example['text']) for example in batch])
+            pad_sequence([torch.tensor(example[0]) for example in batch], batch_first = True, padding_value = tokenizer.pad_token_id),
+            pad_sequence([torch.tensor(example[1]) for example in batch], batch_first = True ,padding_value = tokenizer.pad_token_type_id)
         )
 
-    eval_fn = partial(convert_corpus_example, tokenizer = tokenizer, pad_to_max_seq_len = MAX_SEQ_LEN)
+    eval_fn = partial(convert_corpus_example, tokenizer = tokenizer, max_seq_len = MAX_SEQ_LEN)
 
     corpus_data_loader = create_dataloader(corpus_list, mode = 'predict', batch_size = batch_size, batchify_fn = batchify_fn, trans_fn = eval_fn)
 
@@ -97,13 +97,17 @@ def get_dev_dataloader(tokenizer, batch_size = BATCH_SIZE):
     '''
     '''
     text_list, _ = gen_text_file(path_config['similar_text_pair_file'])
-    corpus_list = [{'idx':idx,'text':text} for idx, text in id2corpus.items()]
+
     batchify_fn = lambda batch: (
-            pad_sequence([torch.tensor(example['idx']) for example in batch]),
-            pad_sequence([torch.tensor(example['text']) for example in batch])
+            pad_sequence([torch.tensor(example[0]) for example in batch], batch_first = True ,padding_value = tokenizer.pad_token_id),
+            pad_sequence([torch.tensor(example[1]) for example in batch], batch_first = True ,padding_value = tokenizer.pad_token_type_id)
         )
 
+    query_fn = partial(convert_corpus_example, tokenizer = tokenizer, max_seq_len = MAX_SEQ_LEN)
 
+    query_data_loader = create_dataloader(text_list, mode = 'predict', batch_size = batch_size, batchify_fn = batchify_fn, trans_fn = query_fn)
+
+    return query_data_loader
 
 
 if __name__ == "__main__":
@@ -118,3 +122,12 @@ if __name__ == "__main__":
 
     id2corpus = gen_id2corpus(path_config['corpus_file'])
     print(id2corpus)
+
+    if os.path.exists(path_config['recall_result_dir']):
+        os.makedirs(path_config['recall_result_dir'])
+    
+    path_config['recall_result_file'] = os.path.join(path_config['recall_result_dir'], path_config['recall_result_file'])
+
+    # 打印标签数据，标签文本数据被映射成了ID的形式
+    # 分类文本数据，文本数据被映射成了ID的形式
+    
