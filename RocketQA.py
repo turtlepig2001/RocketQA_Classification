@@ -23,7 +23,7 @@ from torch.nn.utils.rnn import pad_sequence
 import transformers
 from transformers import AutoTokenizer,AutoModelForSequenceClassification,get_linear_schedule_with_warmup,AutoModel
 
-from data import read_text_pair, convert_example, create_dataloader,convert_corpus_example, gen_id2corpus
+from data import read_text_pair, convert_example, create_dataloader,convert_corpus_example, gen_id2corpus,gen_text_file
 
 FILE_DIR = 'data'
 MAX_SEQ_LEN = 384
@@ -96,6 +96,14 @@ def get_label_dataloader(tokenizer, batch_size = BATCH_SIZE):
 def get_dev_dataloader(tokenizer, batch_size = BATCH_SIZE):
     '''
     '''
+    text_list, _ = gen_text_file(path_config['similar_text_pair_file'])
+    corpus_list = [{'idx':idx,'text':text} for idx, text in id2corpus.items()]
+    batchify_fn = lambda batch: (
+            pad_sequence([torch.tensor(example['idx']) for example in batch]),
+            pad_sequence([torch.tensor(example['text']) for example in batch])
+        )
+
+
 
 
 if __name__ == "__main__":
