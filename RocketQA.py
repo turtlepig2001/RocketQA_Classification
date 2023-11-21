@@ -1,7 +1,7 @@
 '''
 Date: 2023-09-23 22:52:19
 LastEditors: turtlepig
-LastEditTime: 2023-11-19 16:33:14
+LastEditTime: 2023-11-21 22:14:46
 Description:  RocketQA Classification
 '''
 
@@ -23,13 +23,28 @@ from torch.nn.utils.rnn import pad_sequence
 import transformers
 from transformers import AutoTokenizer,AutoModelForSequenceClassification,get_linear_schedule_with_warmup,AutoModel
 
+
 from data import read_text_pair, convert_example, create_dataloader,convert_corpus_example, gen_id2corpus,gen_text_file
+
+from model import SemanticIndexBatchNeg
 
 FILE_DIR = 'data'
 MAX_SEQ_LEN = 384
 # MODEL_NAME = 'rocketqa-zh-dureader-query-encoder'
 MODEL_NAME = "nghuyong/ernie-3.0-base-zh" # huggingface上并未发现上一个预训练模型 该模型是由ernie基础上而来的 此处进行替代
 BATCH_SIZE = 24
+MARGIN = 0.2 #margin
+SCALE = 20 #scale
+OES = 0 # out_emb_size 设置为0，默认不对语义向量进行降维度
+EPOCHS = 50
+
+learning_rate = 5e-5
+warmup_propotion = 0
+save_dir = 'checkpoints_recall'
+weight_decay = 0.0
+log_steps = 100
+recall_num = 20
+
 
 #path config
 path_config = {
@@ -37,7 +52,8 @@ path_config = {
         'recall_result_file':"recall_result.txt",
         'evaluate_result': "evaluate_result.txt",
         'similar_text_pair_file' : "data/dev.txt",
-        'corpus_file' : "data/label.txt"
+        'corpus_file' : "data/label.txt",
+        'train_data': "data/train.txt"
     }
 
 # load data
@@ -48,7 +64,7 @@ def load_data(file_path, read_fn = read_text_pair):
 
     return train_data
 
-def get_model(model_name):
+def get_pretrained_model(model_name):
 
     model = AutoModel.from_pretrained(model_name)
     return model
@@ -130,4 +146,18 @@ if __name__ == "__main__":
 
     # 打印标签数据，标签文本数据被映射成了ID的形式
     # 分类文本数据，文本数据被映射成了ID的形式
+
+    # the true main
+
+    
+
+    train_data = load_data(path_config['train_data'])
+    tokenizer = get_tokenizer(MODEL_NAME)
+    pretrained_model = get_pretrained_model(MODEL_NAME)
+    train_data_loader = get_train_dataloader(train_data, tokenizer = tokenizer)
+
+    num_train_steps = len(train_data_loader) * EPOCHS
+
+    model = SemanticIndexBatchNeg(pretrained_model = pretrained_model, margin = MARGIN, scale = SCALE, output_emb_size = OES)
+
     
