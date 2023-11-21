@@ -1,7 +1,7 @@
 '''
 Date: 2023-11-19 16:39:24
 LastEditors: turtlepig
-LastEditTime: 2023-11-20 23:10:40
+LastEditTime: 2023-11-21 21:33:23
 Description:  base model
 '''
 import abc
@@ -11,6 +11,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 
 class SemanticIndexBase(nn.Module):
     '''
@@ -126,9 +127,43 @@ class SemanticIndexBaseStatic(nn.Module):
         return cls_embedding
 
 
-    
+class SemanticIndexBatchNeg(SemanticIndexBase):
 
+    def __init__(self, pretrained_model, dropout=None, margin = 0.3, scale = 30,output_emb_size=None):
 
-    
+        super().__init__(pretrained_model, dropout, output_emb_size)
 
+        self.margin = margin
+        # Used scaling cosine similarity to ease converge
+        self.scale = scale
 
+    def forward(self,
+                query_input_ids,
+                title_input_ids,
+                query_token_type_ids=None,
+                query_position_ids=None,
+                query_attention_mask=None,
+                title_token_type_ids=None,
+                title_position_ids=None,
+                title_attention_mask=None):
+        
+        query_cls_embedding = self.get_pooled_embedding(query_input_ids, query_token_type_ids, query_position_ids, query_attention_mask)
+
+        title_cls_embedding = self.get_pooled_embedding(title_input_ids, title_token_type_ids, title_position_ids, title_attention_mask)
+
+        cosine_sim = torch.matmul(query_cls_embedding, torch.transpose(title_cls_embedding))
+        
+        # substract margin from all positive samples cosine_sim()
+        margin_diag = torch.full(size = [query_cls_embedding.shape[0]], fill_value = self.margin, dtype = torch.get_default_dtype())
+
+        cosine_sim = cosine_sim - torch.diag(margin_diag)
+
+        # scale cosine to ease training converge
+        cosine_sim *= self.scale
+        
+        labels = torch.arange(0, query_cls_embedding.shape[0], dtype = 'int64')
+        labels = torch.reshape(labels, shape = [-1, 1])
+
+        loss = F.cross_entropy(cosine_sim, labels)
+
+        return loss
