@@ -1,7 +1,7 @@
 '''
 Date: 2023-09-23 22:52:19
 LastEditors: turtlepig
-LastEditTime: 2023-11-21 22:14:46
+LastEditTime: 2023-11-22 22:39:41
 Description:  RocketQA Classification
 '''
 
@@ -28,6 +28,8 @@ from data import read_text_pair, convert_example, create_dataloader,convert_corp
 
 from model import SemanticIndexBatchNeg
 
+from data import build_index
+
 FILE_DIR = 'data'
 MAX_SEQ_LEN = 384
 # MODEL_NAME = 'rocketqa-zh-dureader-query-encoder'
@@ -38,12 +40,21 @@ SCALE = 20 #scale
 OES = 0 # out_emb_size 设置为0，默认不对语义向量进行降维度
 EPOCHS = 50
 
+
 learning_rate = 5e-5
 warmup_propotion = 0
 save_dir = 'checkpoints_recall'
 weight_decay = 0.0
 log_steps = 100
 recall_num = 20
+
+hnsw_max_element = 1000000 # 索引的大小
+
+# 控制时间和精度的平衡参数
+hnsw_ef = 100
+hnsw_m = 100
+output_emb_size = 0
+recall_num = 10
 
 
 #path config
@@ -125,6 +136,10 @@ def get_dev_dataloader(tokenizer, batch_size = BATCH_SIZE):
 
     return query_data_loader
 
+def recall(rs, N = 10):
+    recall_flags = [np.sum(r[0: N]) for r in rs]
+    return np.mean(recall_flags)
+
 
 if __name__ == "__main__":
 
@@ -149,15 +164,24 @@ if __name__ == "__main__":
 
     # the true main
 
-    
-
     train_data = load_data(path_config['train_data'])
     tokenizer = get_tokenizer(MODEL_NAME)
     pretrained_model = get_pretrained_model(MODEL_NAME)
     train_data_loader = get_train_dataloader(train_data, tokenizer = tokenizer)
 
     num_train_steps = len(train_data_loader) * EPOCHS
+    warmup_train_steps = num_train_steps * warmup_propotion
 
     model = SemanticIndexBatchNeg(pretrained_model = pretrained_model, margin = MARGIN, scale = SCALE, output_emb_size = OES)
+
+    decay_params = [
+            p.name for n, p in model.named_parameters()
+            if not any(nd in n for nd in ['bias', 'norm'])
+        ]
+    optimizer = torch.optim.AdamW(params = decay_params, lr = learning_rate, weight_decay = weight_decay)
+
+    lr_scheduler = get_linear_schedule_with_warmup(optimizer = optimizer, num_training_steps = num_train_steps, num_warmup_steps = warmup_train_steps)
+
+
 
     
