@@ -1,7 +1,7 @@
 '''
 Date: 2023-09-23 22:52:19
 LastEditors: turtlepig
-LastEditTime: 2023-11-22 22:39:41
+LastEditTime: 2023-11-24 16:49:03
 Description:  RocketQA Classification
 '''
 
@@ -140,6 +140,67 @@ def recall(rs, N = 10):
     recall_flags = [np.sum(r[0: N]) for r in rs]
     return np.mean(recall_flags)
 
+@torch.no_grad()
+def evaluate(model, corpus_dataloader, query_dataloader, recall_result_file, text_list, id2corpus):
+    
+    final_index = build_index(corpus_dataloader, model, output_emb_size, hnsw_max_elements = hnsw_max_element, hnsw_ef = hnsw_ef, hnsw_m = hnsw_m)
+    query_embedding = model.get_semantic_embedding(query_dataloader)
+
+    with open(recall_result_file, 'w', encoding = 'utf-8' ) as f:
+        for batch_index, batch_query_embedding in enumerate(query_embedding):
+            recalled_idx, cosine_sims = final_index.knn_query(batch_query_embedding.numpy(), recall_num)
+            batch_size = len(cosine_sims)
+            for row_index in range(batch_size):
+                text_index = batch_size*batch_index+row_index
+                for idx, doc_idx in enumerate(recalled_idx[row_index]):
+                    f.write("{}\t{}\t{}\n".format(
+                        text_list[text_index]["text"], id2corpus[doc_idx],
+                        1.0 - cosine_sims[row_index][idx]))
+    
+    text2simiar = {}
+    with open(path_config['similar_text_pair_file'], 'r', encoding = 'utf-8') as f:
+        for line in f:
+            text_arr = line.strip().rsplit("\t")
+            text, similar_text = text_arr[0], text_arr[1].replace('##', ',')
+            text2simiar[text] = similar_text
+
+    rs = []
+    with open(recall_result_file, 'r', encoding = 'utf-8') as f:
+        relevance_labels = []
+        for index, line in enumerate(f):
+            if index % recall_num == 0 and index != 0:
+                rs.append(relevance_labels)
+                relevance_labels = []
+            text_arr = line.strip().rsplit("\t")
+            text, similar_text, cosine_sims = text_arr
+            if text2simiar[text] == similar_text:
+                relevance_labels.append(1)
+            else:
+                relevance_labels.append(0)
+
+        
+    
+    recall_N = []
+    recall_num_list = [1, 5, 10, 20]
+    for topN in recall_num_list:
+        R = round(100 * recall(rs, topN), 3)
+        recall_N.append(str(R))
+    
+    evaluate_result_file = os.path.join(path_config['recall_result_dir'],path_config['evaluate_result'])
+
+    result = open(evaluate_result_file, 'a')
+    res = []
+    timestamp = time.strftime('%Y%m%d-%H%M%S', time.localtime())
+    res.append(timestamp)
+
+    for key, val in zip(recall_num_list, recall_N):
+        print('recall@{}={}'.format(key, val))
+        res.append(str(val))
+    result.write('\t'.join(res) + '\n')
+    return float(recall_N[0])
+
+
+    
 
 if __name__ == "__main__":
 
@@ -173,6 +234,7 @@ if __name__ == "__main__":
     warmup_train_steps = num_train_steps * warmup_propotion
 
     model = SemanticIndexBatchNeg(pretrained_model = pretrained_model, margin = MARGIN, scale = SCALE, output_emb_size = OES)
+    
 
     decay_params = [
             p.name for n, p in model.named_parameters()
