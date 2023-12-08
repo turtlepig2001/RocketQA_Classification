@@ -1,7 +1,7 @@
 '''
 Date: 2023-09-23 22:52:19
 LastEditors: turtlepig
-LastEditTime: 2023-11-24 16:49:03
+LastEditTime: 2023-12-08 21:14:05
 Description:  RocketQA Classification
 '''
 
@@ -228,7 +228,12 @@ if __name__ == "__main__":
     train_data = load_data(path_config['train_data'])
     tokenizer = get_tokenizer(MODEL_NAME)
     pretrained_model = get_pretrained_model(MODEL_NAME)
+    
     train_data_loader = get_train_dataloader(train_data, tokenizer = tokenizer)
+    corpus_data_loader = get_label_dataloader(tokenizer = tokenizer)
+    query_data_loader = get_dev_dataloader(tokenizer = tokenizer)
+
+    text_list, _ = gen_text_file(path_config['similar_text_pair_file'])
 
     num_train_steps = len(train_data_loader) * EPOCHS
     warmup_train_steps = num_train_steps * warmup_propotion
@@ -244,6 +249,66 @@ if __name__ == "__main__":
 
     lr_scheduler = get_linear_schedule_with_warmup(optimizer = optimizer, num_training_steps = num_train_steps, num_warmup_steps = warmup_train_steps)
 
+    # start training
+    save_root_dir = 'checkpoints'
+    global_step = 0
+    best_recall = 0.0
+    tic_train = time.time()
+    for epoch in range(1, EPOCHS + 1):
+        for step, batch in enumerate(train_data_loader, start=1):
+            query_input_ids, query_token_type_ids, title_input_ids, title_token_type_ids = batch
 
+            loss = model(query_input_ids = query_input_ids, title_input_ids = title_input_ids, query_token_type_ids = query_token_type_ids,  title_token_type_ids = title_token_type_ids)
+
+            global_step += 1
+            
+            if global_step % log_steps == 0:
+
+                print(
+                    "global step %d, epoch: %d, batch: %d, loss: %.5f, speed: %.2f step/s" % (global_step, epoch, step, loss, 10 /
+                       (time.time() - tic_train))
+                    )
+
+                tic_train = time.time()
+
+            loss.backward()
+            optimizer.step()
+            lr_scheduler.step()
+            optimizer.zero_grad()
+
+        print("evaluating")
+
+        recall_5 = evaluate(model = model, corpus_dataloader = corpus_data_loader,query_dataloader = query_data_loader, recall_result_file = path_config['recall_result_file'], text_list = text_list, id2corpus = id2corpus)
+
+        if recall_5 > best_recall:
+            best_recall = recall_5
+            save_dir = os.path.join(save_root_dir, "model_best")
+            if not os.path.exists(save_dir):
+                os.makedirs(save_dir)
+            save_param_path = os.path.join(save_dir, 'model_state.pdparams')
+            
+            torch.save(model.state_dict(), save_param_path)
+            tokenizer.save_pretrained(save_dir)
+            with open(os.path.join(save_dir, "train_result.txt"),
+                          'a',
+                          encoding='utf-8') as fp:
+                fp.write('epoch=%d, global_step: %d, recall: %s\n' %
+                             (epoch, global_step, recall_5))
+                
+    # predict   
+    final_index = build_index(corpus_data_loader, model, output_emb_size = output_emb_size, hnsw_ef = hnsw_ef, hnsw_m = hnsw_m)
+
+    query_embedding = model.get_semantic_embedding(query_data_loader)
+
+    list_data = []
+    for batch_index, batch_query_embedding in enumerate(query_embedding):
+        recalled_idx, cosine_sims = final_index.knn_query(batch_query_embedding.numpy(), recall_num)
+        batch_size = len(cosine_sims)
+        for row_index in range(batch_size):
+            text_index = batch_size * batch_index + row_index
+            for idx, doc_idx in enumerate(recalled_idx[row_index]):
+                list_data.append([text_list[text_index]["text"], id2corpus[doc_idx], 1.0 - cosine_sims[row_index][idx]])
 
     
+    # 打印若干预测的值
+    print(list_data[:20])
